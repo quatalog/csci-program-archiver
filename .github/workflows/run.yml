@@ -1,0 +1,42 @@
+name: Save CS program PDFs
+
+on:
+  schedule:
+  - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  get-files:
+    name: Get link from CS RPI website and download it
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Clone repo
+        uses: actions/checkout@v3
+
+      - name: Get files
+        run: |
+          curl -Lso bs-computer-science.html 'https://compsci.rpi.edu/programs/bs-computer-science'
+          grep -oie '[^"]*box\.com[^"]*' bs-computer-science.html | while read -r LINK; do
+            echo "Processing $LINK"
+
+            # Convert /v/ links to /s/ links using og:image trick, in order to use /public/static/ trick
+            ID_NO_VANITY="$(curl -sL "$LINK" | grep -o "< *meta[^>]*property[^>]*og:image[^>]*>" | sed -e 's/.*shared_name=//i' -e 's/">$//i')"
+            STATIC_LINK="https://rpi.app.box.com/public/static/""$ID_NO_VANITY"
+
+            # Get title from og:title
+            TITLE="$(curl -Ls $LINK | grep -oie 'meta property="og:title" content="[^|]*' | cut -d\" -f4)"
+            TITLE="${TITLE%?}"
+
+            # Download from static link
+            curl -Lo "$TITLE" "$STATIC_LINK" && echo "Downloaded $TITLE, $LINK, $STATIC_LINK" || echo "Failed to download $TITLE, $LINK, $STATIC_LINK" || true
+          done
+            
+      - name: Commit files
+        run: |
+          git config user.name "Quatalog Updater" && git config user.email "github_actions@quatalog.com"
+          git add *.pdf *.html
+          git commit -m "$(date -u)" || exit 0
+          git push
